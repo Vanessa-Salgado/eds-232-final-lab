@@ -228,19 +228,21 @@ autoplot(xgb_cv_tune) + #plot cv results for parameter tuning
   theme_bw()
 ```
 ```{r}
-xgb_best = show_best(xgb_cv_tune, n = 1, metric = "roc_auc") #get metrics for best boosted regression
+xgb_best = show_best(xgb_cv_tune, n = 1, metric = "rmse") #get metrics for best boosted regression
 xgb_best
 ```
 
 ```{r}
-xgb_final = finalize_workflow(xgb_workflow, select_best(xgb_cv_tune, metric = "roc_auc"))
+xgb_final = finalize_workflow(xgb_workflow, select_best(xgb_cv_tune, metric = "rmse"))
 
 train_fit_xgb = fit(xgb_final, train) #fit the Boosted Trees model to the training set
 
 
 #testing prediction
 test_predict_xgb = predict(train_fit_xgb, test) %>% #get testing prediction
-  bind_cols(test)  #bind to testing column
+  bind_cols(test)
+
+
 
 test_predict2_xgb = predict(train_fit_xgb, test, type = "prob") %>% #get prediction probabilities for test 
   bind_cols(test) #bind to testing column
@@ -248,7 +250,7 @@ test_predict2_xgb = predict(train_fit_xgb, test, type = "prob") %>% #get predict
 
 
 #testing accuracy
-accuracy(test_predict_xgb, truth = dic, estimate = .pred_class) #get accuracy of testing prediction
+accuracy(test_predict_xgb, truth = dic, estimate = .pred) #get accuracy of testing prediction
 
 test_roc_auc_xgb = roc_curve(test_predict2_xgb, dic, .pred_bathydemersal, .pred_bathypelagic, .pred_benthopelagic, .pred_demersal, .pred_pelagic, `.pred_pelagic-neritic`, `.pred_pelagic-oceanic`, `.pred_reef-associated`)
 
