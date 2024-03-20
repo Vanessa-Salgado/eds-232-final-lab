@@ -1,6 +1,6 @@
 ---
 title: "Final Lab Kaggle"
-author: "Vanessa Salgado"
+author: "Vanessa Salgado and Rosemary Juarez"
 format: html
 ---
 
@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 Load Libraries
 ```{r}
-library(tidyverse)
+library(tidyverse) 
 library(tidymodels)
 library(tensorflow)
 library(keras)
@@ -19,7 +19,14 @@ library(rsample)
 library(glmnet)
 library(corrplot)
 library(here)
+library(xgboost) #package for boosted trees
+library(kableExtra) #for formatting tables in html
 ```
+
+# Team Women in stem
+
+For our 2024 Kaggle Competition for 232 Machine Learning, we ran three different models and chose the most accurate model to predict predict dissolved inorganic carbon in water samples collected by the California Cooperative Oceanic Fisheries Investigations program (CalCOFI). 
+
 
 Read in Data
 ```{r}
@@ -177,8 +184,85 @@ new_predict <- predict(object = rf_fit, new_data = test) %>%
 
 ##  Boosted Regression
 
+
+```{r}
+#model for boosted regression
+xgb_model = boost_tree(learn_rate = tune(), 
+                       trees = tune()) %>% 
+  set_engine("xgboost") %>% 
+  set_mode("regression")
+
+
+#workflow
+xgb_workflow = workflow() %>% #create workflow
+  add_model(xgb_model) %>% #add boosted trees model
+  add_recipe(dic_recipe) #add recipe
+
+#isolate parameters
+xgb_best_model <- xgb_model %>% 
+  extract_parameter_set_dials()
+
+```
+
+
+```{r}
+#
+grid <- expand.grid(learn_rate = seq(0.0001, 0.3, length.out = 30))
+
+grid2 <- grid_latin_hypercube(xgb_best_model, size = 10)
+
+
+# grid tuning and tuning
+xgb_cv_tune = xgb_workflow %>%
+   tune_grid(resamples = v_folds, grid = grid2 ) #use cross validation to tune learn_rate and trees parameters
+```
+
+```{r}
+collect_metrics(xgb_cv_tune)
+```
+
+
+
+```{r}
+autoplot(xgb_cv_tune) + #plot cv results for parameter tuning
+  theme_bw()
+```
+```{r}
+xgb_best = show_best(xgb_cv_tune, n = 1, metric = "roc_auc") #get metrics for best boosted regression
+xgb_best
+```
+
+```{r}
+xgb_final = finalize_workflow(xgb_workflow, select_best(xgb_cv_tune, metric = "roc_auc"))
+
+train_fit_xgb = fit(xgb_final, train) #fit the Boosted Trees model to the training set
+
+
+#testing prediction
+test_predict_xgb = predict(train_fit_xgb, test) %>% #get testing prediction
+  bind_cols(test)  #bind to testing column
+
+test_predict2_xgb = predict(train_fit_xgb, test, type = "prob") %>% #get prediction probabilities for test 
+  bind_cols(test) #bind to testing column
+
+
+
+#testing accuracy
+accuracy(test_predict_xgb, truth = dic, estimate = .pred_class) #get accuracy of testing prediction
+
+test_roc_auc_xgb = roc_curve(test_predict2_xgb, dic, .pred_bathydemersal, .pred_bathypelagic, .pred_benthopelagic, .pred_demersal, .pred_pelagic, `.pred_pelagic-neritic`, `.pred_pelagic-oceanic`, `.pred_reef-associated`)
+
+```
+
+
+
+
+
 ## Saving predictions for the competition
 ```{r}
 
 ```
+
+
+
 
