@@ -1,0 +1,173 @@
+---
+title: "Final Lab Kaggle"
+author: "Vanessa Salgado"
+format: html
+---
+
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+Load Libraries
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(tensorflow)
+library(keras)
+library(rsample)
+library(glmnet)
+library(corrplot)
+library(here)
+```
+
+Read in Data
+```{r}
+set.seed(245)
+
+sample_submission <- read_csv(here::here("data", "sample_submission.csv"))
+full_train <- read_csv(here("data", "train.csv")) 
+final_test_data <- read_csv(here("data", "test.csv"))
+
+# outcome variable is DIC
+train <- full_train %>% 
+  janitor::clean_names() %>% 
+  select(-c(x13, ta1_x))
+
+# test data
+test <- final_test_data %>% 
+  janitor::clean_names()
+```
+
+Explore the data
+```{r}
+ggplot(train) +
+  geom_histogram(aes(x = dic)) +
+  theme_bw()
+
+# checking for multicollinearity 
+cor(train) %>%
+  corrplot()
+```
+
+
+Preprocessing
+```{r}
+set.seed(123)
+
+# split data
+split <- initial_split(train)
+train <- training(split)
+test <- testing(split)
+
+# create recipe
+dic_recipe <- recipe(dic ~ ., data = train) %>% 
+  step_zv(all_predictors()) %>% 
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors())
+
+
+# specify folds for cross-validation
+# 5 or 10 
+folds <- vfold_cv(train, v = 10)
+
+
+
+rf_spec <- rand_forest(mtry = tune(), 
+                        trees = tune()) %>%
+  set_engine("ranger") %>% 
+  set_mode("regression") 
+
+```
+
+
+## lm
+
+```{r}
+set.seed(123)
+
+# Create a linear model specification
+lm_spec <- linear_reg() %>% 
+  set_engine("lm") %>% 
+  set_mode("regression")
+
+# Hold modeling components in a workflow
+lm_wf <- workflow() %>% 
+  add_recipe(dic_recipe) %>% 
+  add_model(lm_spec)
+
+# Train the model
+lm_wf_fit <- lm_wf %>% 
+  fit(data = train)
+
+# Make predictions for the test set
+predictions <- lm_wf_fit %>% 
+  predict(new_data = test)
+
+
+# Bind predictions to the test set
+lm_results <- test %>% 
+  bind_cols(predictions)
+
+
+# Print the first ten rows of the tibble
+lm_results %>% 
+  slice_head(n = 10)
+
+# Evaluate performance of linear regression
+metrics(data = lm_results,
+        truth = dic,
+        estimate = .pred)
+
+
+new_predict_lm <- predict(object = lm_wf_fit, new_data = test) %>% 
+  bind_cols(test) %>% 
+  select(id, DIC = .pred)
+```
+
+
+## Random forest
+```{r}
+set.seed(234)
+# create workflow
+rf_workflow <- workflow() %>% 
+  add_model(rf_spec) %>% 
+  add_recipe(dic_recipe)
+
+doParallel::registerDoParallel(cores = 4)
+
+# tune
+system.time(
+  rf_tune <- rf_workflow %>% 
+    tune_grid(
+      resamples = vfolds, # add folds
+      grid = 5 # number of combos
+    )
+)
+
+rf_final = finalize_workflow(rf_workflow, 
+                             select_best(rf_tune, metric = "rmse"))
+
+rf_fit <- fit(rf_final, dic_train) # fit the data to the training data
+
+train_predict <- predict(object = rf_fit, new_data = dic_train) %>% # predict the training set
+  bind_cols(dic_train) # bind training set column to prediction
+
+test_predict <- predict(object = rf_fit, new_data = dic_test) %>% # predict the training set
+  bind_cols(dic_test) # bind prediction to testing data column
+
+train_metrics <- train_predict %>%
+  metrics(dic, .pred) # get testing data metrics
+
+test_metrics <- test_predict %>%
+  metrics(dic, .pred) # get testing data metrics
+
+train_metrics
+test_metrics
+
+new_predict <- predict(object = rf_fit, new_data = test) %>% 
+  bind_cols(test) %>% 
+  select(id, DIC = .pred)
+
+write.csv(new_predict, "week-10/new_predict.csv", row.names=FALSE)
+```
