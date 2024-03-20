@@ -39,7 +39,7 @@ test <- final_test_data %>%
   janitor::clean_names()
 ```
 
-Explore the data
+## Explore the data
 ```{r}
 ggplot(train) +
   geom_histogram(aes(x = dic)) +
@@ -51,7 +51,7 @@ cor(train) %>%
 ```
 
 
-Preprocessing
+## Preprocessing
 ```{r}
 set.seed(123)
 
@@ -69,7 +69,7 @@ dic_recipe <- recipe(dic ~ ., data = train) %>%
 
 # specify folds for cross-validation
 # 5 or 10 
-folds <- vfold_cv(train, v = 10)
+v_folds <- vfold_cv(train, v = 10)
 
 
 
@@ -80,8 +80,9 @@ rf_spec <- rand_forest(mtry = tune(),
 
 ```
 
+# Algorithms 
 
-## lm
+## Linear Regression
 
 ```{r}
 set.seed(123)
@@ -126,7 +127,7 @@ new_predict_lm <- predict(object = lm_wf_fit, new_data = test) %>%
 ```
 
 
-## Random forest
+## Random Forest
 ```{r}
 set.seed(234)
 # create workflow
@@ -140,7 +141,7 @@ doParallel::registerDoParallel(cores = 4)
 system.time(
   rf_tune <- rf_workflow %>% 
     tune_grid(
-      resamples = vfolds, # add folds
+      resamples = v_folds, # add folds
       grid = 5 # number of combos
     )
 )
@@ -148,13 +149,13 @@ system.time(
 rf_final = finalize_workflow(rf_workflow, 
                              select_best(rf_tune, metric = "rmse"))
 
-rf_fit <- fit(rf_final, dic_train) # fit the data to the training data
+rf_fit <- fit(rf_final, train) # fit the data to the training data
 
-train_predict <- predict(object = rf_fit, new_data = dic_train) %>% # predict the training set
-  bind_cols(dic_train) # bind training set column to prediction
+train_predict <- predict(object = rf_fit, new_data = train) %>% # predict the training set
+  bind_cols(train) # bind training set column to prediction
 
-test_predict <- predict(object = rf_fit, new_data = dic_test) %>% # predict the training set
-  bind_cols(dic_test) # bind prediction to testing data column
+test_predict <- predict(object = rf_fit, new_data = test) %>% # predict the training set
+  bind_cols(test) # bind prediction to testing data column
 
 train_metrics <- train_predict %>%
   metrics(dic, .pred) # get testing data metrics
@@ -169,5 +170,15 @@ new_predict <- predict(object = rf_fit, new_data = test) %>%
   bind_cols(test) %>% 
   select(id, DIC = .pred)
 
-write.csv(new_predict, "week-10/new_predict.csv", row.names=FALSE)
+# write.csv(new_predict, "week-10/new_predict.csv", row.names=FALSE)
 ```
+
+
+
+##  Boosted Regression
+
+## Saving predictions for the competition
+```{r}
+
+```
+
