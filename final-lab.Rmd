@@ -37,12 +37,12 @@ full_train <- read_csv(here("data", "train.csv"))
 final_test_data <- read_csv(here("data", "test.csv"))
 
 # outcome variable is DIC
-train <- full_train %>% 
+train_data <- full_train %>% 
   janitor::clean_names() %>% 
   select(-c(x13, ta1_x))
 
 # test data
-test <- final_test_data %>% 
+test_data <- final_test_data %>% 
   janitor::clean_names()
 ```
 
@@ -63,7 +63,7 @@ cor(train) %>%
 set.seed(123)
 
 # split data
-split <- initial_split(train)
+split <- initial_split(train_data)
 train <- training(split)
 test <- testing(split)
 
