@@ -78,13 +78,6 @@ dic_recipe <- recipe(dic ~ ., data = train) %>%
 # 5 or 10 
 v_folds <- vfold_cv(train, v = 10)
 
-
-
-rf_spec <- rand_forest(mtry = tune(), 
-                        trees = tune()) %>%
-  set_engine("ranger") %>% 
-  set_mode("regression") 
-
 ```
 
 # Algorithms 
@@ -137,6 +130,14 @@ new_predict_lm <- predict(object = lm_wf_fit, new_data = test) %>%
 ## Random Forest
 ```{r}
 set.seed(234)
+
+#random forest model
+rf_spec <- rand_forest(mtry = tune(), 
+                        trees = tune()) %>%
+  set_engine("ranger") %>% 
+  set_mode("regression") 
+
+
 # create workflow
 rf_workflow <- workflow() %>% 
   add_model(rf_spec) %>% 
@@ -152,6 +153,8 @@ system.time(
       grid = 5 # number of combos
     )
 )
+
+
 
 rf_final = finalize_workflow(rf_workflow, 
                              select_best(rf_tune, metric = "rmse"))
@@ -173,7 +176,7 @@ test_metrics <- test_predict %>%
 train_metrics
 test_metrics
 
-new_predict <- predict(object = rf_fit, new_data = test) %>% 
+new_predict_rf <- predict(object = rf_fit, new_data = test) %>% 
   bind_cols(test) %>% 
   select(id, DIC = .pred)
 
@@ -202,12 +205,6 @@ xgb_workflow = workflow() %>% #create workflow
 xgb_best_model <- xgb_model %>% 
   extract_parameter_set_dials()
 
-```
-
-
-```{r}
-#
-grid <- expand.grid(learn_rate = seq(0.0001, 0.3, length.out = 30))
 
 grid2 <- grid_latin_hypercube(xgb_best_model, size = 10)
 
@@ -215,54 +212,64 @@ grid2 <- grid_latin_hypercube(xgb_best_model, size = 10)
 # grid tuning and tuning
 xgb_cv_tune = xgb_workflow %>%
    tune_grid(resamples = v_folds, grid = grid2 ) #use cross validation to tune learn_rate and trees parameters
-```
 
-```{r}
+
+#showing the 
 collect_metrics(xgb_cv_tune)
-```
 
 
-
-```{r}
 autoplot(xgb_cv_tune) + #plot cv results for parameter tuning
   theme_bw()
-```
-```{r}
-xgb_best = show_best(xgb_cv_tune, n = 1, metric = "rmse") #get metrics for best boosted regression
-xgb_best
-```
 
-```{r}
+ #get metrics for best boosted regression
+xgb_best = show_best(xgb_cv_tune, metric = "rmse", n = 1)
+xgb_best
+
+
 xgb_final = finalize_workflow(xgb_workflow, select_best(xgb_cv_tune, metric = "rmse"))
 
 train_fit_xgb = fit(xgb_final, train) #fit the Boosted Trees model to the training set
 
 
 #testing prediction
-test_predict_xgb = predict(train_fit_xgb, test) %>% #get testing prediction
+predict_xgb = predict(train_fit_xgb, test) %>% #get testing prediction
   bind_cols(test)
 
+new_predic_xgb <- predict_xgb %>% 
+  select(id, dic = .pred)
+  
 
+#testing performance of my model
+rmse_test <- metrics(data = predict_xgb, estimate = .pred, truth = dic)
+rmse_test
 
-test_predict2_xgb = predict(train_fit_xgb, test, type = "prob") %>% #get prediction probabilities for test 
-  bind_cols(test) #bind to testing column
+```
 
+comparing performances
+```{r}
+lm_performance <- rmse(lm_results, truth = dic, estimate = .pred)
+rf_performance <- rmse(test_predict, truth = dic, estimate = .pred)
+xgb_performance <- rmse(predict_xgb, truth = dic, estimate = .pred)
 
+model <- c('Linear Regression', 'Random Forest',' Extreme Gradient Boosting')
 
-#testing accuracy
-accuracy(test_predict_xgb, truth = dic, estimate = .pred) #get accuracy of testing prediction
+performance <- rbind(lm_performance, rf_performance, xgb_performance)
 
-test_roc_auc_xgb = roc_curve(test_predict2_xgb, dic, .pred_bathydemersal, .pred_bathypelagic, .pred_benthopelagic, .pred_demersal, .pred_pelagic, `.pred_pelagic-neritic`, `.pred_pelagic-oceanic`, `.pred_reef-associated`)
+comparison <- cbind(model, performance)
+
+kable(comparison)
 
 ```
 
 
 
-
-
 ## Saving predictions for the competition
+
 ```{r}
 
+write_csv(new_predict_lm, "women_in_stem_lm.csv")
+write_csv(new_predict_rf, "women_in_stem_rf.csv")
+write_csv(new_predict_xgb, "women_in_stem_xgb.csv")
 ```
 
 
