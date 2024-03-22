@@ -51,21 +51,6 @@ final_test_data <- final_test_data %>%
 
 
 ## Explore the Data
-
-Select exploration steps were set to `eval = FALSE` to minimize clutter.
-```{r, eval=FALSE}
-# view data types
-glimpse(full_train)
-
-# check for NAs
-colSums(is.na(full_train)) #entire ...13 column is NA
-
-# check if id column is unique
-length(unique(full_train$id)) == nrow(full_train)
-```
-
-
-## Explot the data 
 ```{r}
 # update training data
 full_train <- full_train %>% 
@@ -194,7 +179,7 @@ rf_wf <- workflow() %>%
 # cross validation
 rf_tune_res <- rf_wf %>% 
   tune_grid(resamples = folds,
-            grid = 5)
+            grid = 7)
 
 # finalize workflow
 rf_final <- finalize_workflow(rf_wf, select_best(rf_tune_res, metric = "rmse"))
@@ -313,8 +298,8 @@ rf_final_pred <- rf_final_pred %>%
 
 # export final prediction data frames
 
-write_csv(xgb_final_pred, file = here("data", "womeninstem_xgb_pred.csv"))
-write_csv(rf_final_pred, file = here("data", "womeninstem_rf_pred.csv"))
+#write_csv(xgb_final_pred, file = here("data", "womeninstem_xgb_pred.csv"))
+#write_csv(rf_final_pred, file = here("data", "womeninstem_rf_pred.csv"))
 ```
 
 
