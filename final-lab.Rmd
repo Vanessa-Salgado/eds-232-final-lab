@@ -27,6 +27,8 @@ library(kableExtra) #for formatting tables in html
 
 For our 2024 Kaggle Competition for 232 Machine Learning, we ran three different models and chose the most accurate model to predict predict dissolved inorganic carbon in water samples collected by the California Cooperative Oceanic Fisheries Investigations program (CalCOFI). 
 
+We will run three models, compare, and choose the best performing model. To check our model metrics, we will be using RMSE.
+
 
 Read in Data
 ```{r}
@@ -59,6 +61,8 @@ cor(train) %>%
 
 
 ## Preprocessing
+
+In our preprocessing stage, we split our data, created our recipe, and specified our folds for cross validation.
 ```{r}
 set.seed(123)
 
@@ -83,6 +87,13 @@ v_folds <- vfold_cv(train, v = 10)
 # Algorithms 
 
 ## Linear Regression
+We used linear regression for one of our models. This is one method for modeling regression.
+our steps include:
+- specify model
+- create workflow
+- train model
+- predict using test data
+- compare metrics
 
 ```{r}
 set.seed(123)
@@ -128,6 +139,16 @@ new_predict_lm <- predict(object = lm_wf_fit, new_data = test) %>%
 
 
 ## Random Forest
+another method for using regression is random forest. Random Forest is known for classification tasks, but can also be used for regression. Our steps include:
+
+- creating random forest model. 
+- create workflow
+- tune hyperoparameters
+- finalize workflow
+- train model using training data
+- predict using testing data
+- check metrics
+
 ```{r}
 set.seed(234)
 
@@ -159,7 +180,7 @@ system.time(
 rf_final = finalize_workflow(rf_workflow, 
                              select_best(rf_tune, metric = "rmse"))
 
-rf_fit <- fit(rf_final, train) # fit the data to the training data
+rf_fit <- fit(rf_final, train) # fit the model to the training data
 
 train_predict <- predict(object = rf_fit, new_data = train) %>% # predict the training set
   bind_cols(train) # bind training set column to prediction
@@ -186,6 +207,17 @@ new_predict_rf <- predict(object = rf_fit, new_data = test) %>%
 
 
 ##  Boosted Regression
+Extreme Gradient Boosting is known for its efficiency in regression algorithms. Our steps for creating our model include:
+- creating model by tuning our regressions
+- create a workflow
+- isolate parameters
+- create grid for our tuning process
+- tune
+- finalize workflow
+- fit our model to our training data
+- predict with testing data
+- test model performance
+
 
 
 ```{r}
@@ -205,7 +237,7 @@ xgb_workflow = workflow() %>% #create workflow
 xgb_best_model <- xgb_model %>% 
   extract_parameter_set_dials()
 
-
+#assigning grid
 grid2 <- grid_latin_hypercube(xgb_best_model, size = 10)
 
 
@@ -214,7 +246,7 @@ xgb_cv_tune = xgb_workflow %>%
    tune_grid(resamples = v_folds, grid = grid2 ) #use cross validation to tune learn_rate and trees parameters
 
 
-#showing the 
+#showing metrics of our model
 collect_metrics(xgb_cv_tune)
 
 
@@ -245,7 +277,9 @@ rmse_test
 
 ```
 
-comparing performances
+## comparing performances
+
+We want to compare which model performed best out of the three regression models we created. Our table below will show which model is best. 
 ```{r}
 lm_performance <- rmse(lm_results, truth = dic, estimate = .pred)
 rf_performance <- rmse(test_predict, truth = dic, estimate = .pred)
@@ -264,6 +298,7 @@ kable(comparison)
 
 
 ## Saving predictions for the competition
+we save our predictions by writing our final predictions in .CSV format
 
 ```{r}
 
