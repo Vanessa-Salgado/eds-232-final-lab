@@ -1,16 +1,25 @@
 ---
-title: "Final Lab Kaggle"
-author: "Vanessa Salgado and Rosemary Juarez"
+title: "Lab9 Kaggle"
+author: "Vanessa-Salgado and Rosemary Juarez"
 format: html
 ---
 
+## Preparation
 
-```{r setup, include = FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```{r}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
 ```
 
-Load Libraries
-```{r}
+
+
+# Team Women in stem
+
+For our 2024 Kaggle Competition for 232 Machine Learning, we ran three different models and chose the most accurate model to predict predict dissolved inorganic carbon in water samples collected by the California Cooperative Oceanic Fisheries Investigations program (CalCOFI). 
+
+We will run three models, compare, and choose the best performing model. To check our model metrics, we will be using RMSE.
+
+Load libraries
+```{r, results='hide'}
 library(tidyverse) 
 library(tidymodels)
 library(tensorflow)
@@ -23,65 +32,79 @@ library(xgboost) #package for boosted trees
 library(kableExtra) #for formatting tables in html
 ```
 
-# Team Women in stem
-
-For our 2024 Kaggle Competition for 232 Machine Learning, we ran three different models and chose the most accurate model to predict predict dissolved inorganic carbon in water samples collected by the California Cooperative Oceanic Fisheries Investigations program (CalCOFI). 
-
-We will run three models, compare, and choose the best performing model. To check our model metrics, we will be using RMSE.
-
-
-Read in Data
-```{r}
-set.seed(245)
-
-sample_submission <- read_csv(here::here("data", "sample_submission.csv"))
+## Read in Data
+```{r, results='hide'}
 full_train <- read_csv(here("data", "train.csv")) 
 final_test_data <- read_csv(here("data", "test.csv"))
 
-# outcome variable is DIC
-train_data <- full_train %>% 
-  janitor::clean_names() %>% 
-  select(-c(x13, ta1_x))
+# isolate ID column
+id_list <- final_test_data$id
 
-# test data
-test_data <- final_test_data %>% 
-  janitor::clean_names()
+# update final test data for model
+final_test_data <- final_test_data %>% 
+  
+  # rename column to match
+  rename(TA1.x = TA1) %>% 
+  
+  select(-id)
 ```
 
-## Explore the data
-```{r}
-ggplot(train) +
-  geom_histogram(aes(x = dic)) +
-  theme_bw()
 
+## Explore the Data
+
+Select exploration steps were set to `eval = FALSE` to minimize clutter.
+```{r, eval=FALSE}
+# view data types
+glimpse(full_train)
+
+# check for NAs
+colSums(is.na(full_train)) #entire ...13 column is NA
+
+# check if id column is unique
+length(unique(full_train$id)) == nrow(full_train)
+```
+
+
+## Explot the data 
+```{r}
+# update training data
+full_train <- full_train %>% 
+  
+  # remove column of NAs and unique identifier (id) column
+  select(-c(id, ...13))
+
+# view distribution of DIC
+ggplot(full_train) +
+  geom_histogram(aes(x = DIC)) +
+  theme_minimal()
+```
+
+```{r}
 # checking for multicollinearity 
-cor(train) %>%
+cor(full_train) %>%
   corrplot()
 ```
-
 
 ## Preprocessing
 
 In our preprocessing stage, we split our data, created our recipe, and specified our folds for cross validation.
-```{r}
-set.seed(123)
 
+```{r}
 # split data
-split <- initial_split(train_data)
+split <- initial_split(full_train)
 train <- training(split)
 test <- testing(split)
 
-# create recipe
-dic_recipe <- recipe(dic ~ ., data = train) %>% 
-  step_zv(all_predictors()) %>% 
-  step_center(all_numeric_predictors()) %>% 
-  step_scale(all_numeric_predictors())
-
-
 # specify folds for cross-validation
-# 5 or 10 
-v_folds <- vfold_cv(train, v = 10)
+folds <- vfold_cv(train, v = 10)
 
+# split data into test and train
+split <- initial_split(train)
+
+# define a recipe (regression formula)
+recip <- recipe(DIC ~., data = train) %>% 
+  step_center(all_predictors()) %>% 
+  step_scale(all_predictors())
 ```
 
 # Algorithms 
@@ -95,17 +118,15 @@ our steps include:
 - predict using test data
 - compare metrics
 
-```{r}
-set.seed(123)
 
-# Create a linear model specification
+```{r}
 lm_spec <- linear_reg() %>% 
   set_engine("lm") %>% 
   set_mode("regression")
 
 # Hold modeling components in a workflow
 lm_wf <- workflow() %>% 
-  add_recipe(dic_recipe) %>% 
+  add_recipe(recip) %>% 
   add_model(lm_spec)
 
 # Train the model
@@ -128,18 +149,18 @@ lm_results %>%
 
 # Evaluate performance of linear regression
 metrics(data = lm_results,
-        truth = dic,
+        truth = DIC,
         estimate = .pred)
 
 
 new_predict_lm <- predict(object = lm_wf_fit, new_data = test) %>% 
   bind_cols(test) %>% 
-  select(id, DIC = .pred)
+  select( DIC = .pred)
+
 ```
 
-
 ## Random Forest
-another method for using regression is random forest. Random Forest is known for classification tasks, but can also be used for regression. Our steps include:
+Another method for using regression is random forest. Random Forest is known for classification tasks, but can also be used for regression. Our steps include:
 
 - creating random forest model. 
 - create workflow
@@ -150,60 +171,45 @@ another method for using regression is random forest. Random Forest is known for
 - check metrics
 
 ```{r}
-set.seed(234)
 
-#random forest model
+## Random Forest Pre-processing
+
+
+# random forest model specification
 rf_spec <- rand_forest(mtry = tune(), 
-                        trees = tune()) %>%
+                       trees = tune(),
+                       min_n = tune()) %>%
   set_engine("ranger") %>% 
-  set_mode("regression") 
+  set_mode("regression")
 
-
-# create workflow
-rf_workflow <- workflow() %>% 
+# random forest model workflow
+rf_wf <- workflow() %>% 
   add_model(rf_spec) %>% 
-  add_recipe(dic_recipe)
-
-doParallel::registerDoParallel(cores = 4)
-
-# tune
-system.time(
-  rf_tune <- rf_workflow %>% 
-    tune_grid(
-      resamples = v_folds, # add folds
-      grid = 5 # number of combos
-    )
-)
+  add_recipe(recip)
 
 
+## Random Forest Tuning
 
-rf_final = finalize_workflow(rf_workflow, 
-                             select_best(rf_tune, metric = "rmse"))
 
-rf_fit <- fit(rf_final, train) # fit the model to the training data
+# cross validation
+rf_tune_res <- rf_wf %>% 
+  tune_grid(resamples = folds,
+            grid = 5)
 
-train_predict <- predict(object = rf_fit, new_data = train) %>% # predict the training set
-  bind_cols(train) # bind training set column to prediction
+# finalize workflow
+rf_final <- finalize_workflow(rf_wf, select_best(rf_tune_res, metric = "rmse"))
 
-test_predict <- predict(object = rf_fit, new_data = test) %>% # predict the training set
-  bind_cols(test) # bind prediction to testing data column
 
-train_metrics <- train_predict %>%
-  metrics(dic, .pred) # get testing data metrics
+## Random Forest Final Predictions
 
-test_metrics <- test_predict %>%
-  metrics(dic, .pred) # get testing data metrics
+# final fit
+rf_fit <- fit(rf_final, train)
 
-train_metrics
-test_metrics
+# final prediction on test data
+rf_pred_df <- augment(rf_fit, new_data = test)
 
-new_predict_rf <- predict(object = rf_fit, new_data = test) %>% 
-  bind_cols(test) %>% 
-  select(id, DIC = .pred)
 
-# write.csv(new_predict, "week-10/new_predict.csv", row.names=FALSE)
 ```
-
 
 
 ##  Boosted Regression
@@ -219,75 +225,66 @@ Extreme Gradient Boosting is known for its efficiency in regression algorithms. 
 - test model performance
 
 
-
 ```{r}
-#model for boosted regression
-xgb_model = boost_tree(learn_rate = tune(), 
-                       trees = tune()) %>% 
-  set_engine("xgboost") %>% 
+
+## Boosted Regression Pre-processing
+
+
+# create boosted regression tree model specification
+xgb_spec <- boost_tree(learn_rate = tune(),
+                       trees = tune(),
+                       tree_depth = tune(),
+                       min_n = tune(),
+                       loss_reduction = tune(),
+                       mtry = tune(),
+                       sample_size = tune()) %>% 
+  set_engine("xgboost", nthread = 2) %>% 
   set_mode("regression")
 
+# create xgb model workflow
+xgb_wf <- workflow() %>% 
+  add_model(xgb_spec) %>% 
+  add_recipe(recip)
 
-#workflow
-xgb_workflow = workflow() %>% #create workflow
-  add_model(xgb_model) %>% #add boosted trees model
-  add_recipe(dic_recipe) #add recipe
-
-#isolate parameters
-xgb_best_model <- xgb_model %>% 
-  extract_parameter_set_dials()
-
-#assigning grid
-grid2 <- grid_latin_hypercube(xgb_best_model, size = 10)
+# isolate parameters
+xgb_param <- xgb_spec %>% extract_parameter_set_dials()
 
 
-# grid tuning and tuning
-xgb_cv_tune = xgb_workflow %>%
-   tune_grid(resamples = v_folds, grid = grid2 ) #use cross validation to tune learn_rate and trees parameters
+## Boosted Regression Tuning
+
+# cross validation
+xgb_tune_res <- xgb_wf %>% 
+  tune_grid(resamples = folds,
+            grid = grid_latin_hypercube(finalize(xgb_param, x = train),
+                size = 7))
+
+# finalize workflow
+xgb_final <- finalize_workflow(xgb_wf, select_best(xgb_tune_res, metric = "rmse"))
 
 
-#showing metrics of our model
-collect_metrics(xgb_cv_tune)
 
+## Boosted Regression Predictions
 
-autoplot(xgb_cv_tune) + #plot cv results for parameter tuning
-  theme_bw()
+# final fit
+xgb_fit <- fit(xgb_final, train)
 
- #get metrics for best boosted regression
-xgb_best = show_best(xgb_cv_tune, metric = "rmse", n = 1)
-xgb_best
-
-
-xgb_final = finalize_workflow(xgb_workflow, select_best(xgb_cv_tune, metric = "rmse"))
-
-train_fit_xgb = fit(xgb_final, train) #fit the Boosted Trees model to the training set
-
-
-#testing prediction
-predict_xgb = predict(train_fit_xgb, test) %>% #get testing prediction
-  bind_cols(test)
-
-new_predic_xgb <- predict_xgb %>% 
-  select(id, dic = .pred)
-  
-
-#testing performance of my model
-rmse_test <- metrics(data = predict_xgb, estimate = .pred, truth = dic)
-rmse_test
-
+# final prediction on test data
+xgb_pred_df <- augment(xgb_fit, new_data = test)
 ```
 
-## comparing performances
+
+## Comparing Performances
 
 We want to compare which model performed best out of the three regression models we created. Our table below will show which model is best. 
+
 ```{r}
-lm_performance <- rmse(lm_results, truth = dic, estimate = .pred)
-rf_performance <- rmse(test_predict, truth = dic, estimate = .pred)
-xgb_performance <- rmse(predict_xgb, truth = dic, estimate = .pred)
+#lm_performance <- rmse(lm_results, truth = dic, estimate = .pred)
+rf_performance <- rmse(rf_pred_df, truth = DIC, estimate = .pred)
+xgb_performance <- rmse(xgb_pred_df, truth = DIC, estimate = .pred)
 
-model <- c('Linear Regression', 'Random Forest',' Extreme Gradient Boosting')
+model <- c('Random Forest',' Extreme Gradient Boosting')
 
-performance <- rbind(lm_performance, rf_performance, xgb_performance)
+performance <- rbind(rf_performance, xgb_performance)
 
 comparison <- cbind(model, performance)
 
@@ -296,16 +293,30 @@ kable(comparison)
 ```
 
 
-
-## Saving predictions for the competition
-we save our predictions by writing our final predictions in .CSV format
+## Predictions for Submission
 
 ```{r}
+# create final prediction on test data
+xgb_final_pred <- augment(xgb_fit, new_data = final_test_data)
+rf_final_pred <- augment(rf_fit, new_data = final_test_data)
 
-write_csv(new_predict_lm, "women_in_stem_lm.csv")
-write_csv(new_predict_rf, "women_in_stem_rf.csv")
-write_csv(new_predict_xgb, "women_in_stem_xgb.csv")
+# bind back to original data to add id column
+xgb_final_pred <- xgb_final_pred %>% 
+  mutate(id = id_list) %>% 
+  rename(DIC = .pred) %>% 
+  select(id, DIC)
+
+rf_final_pred <- rf_final_pred %>% 
+  mutate(id = id_list) %>% 
+  rename(DIC = .pred) %>% 
+  select(id, DIC)
+
+# export final prediction data frames
+
+write_csv(xgb_final_pred, file = here("data", "womeninstem_xgb_pred.csv"))
+write_csv(rf_final_pred, file = here("data", "womeninstem_rf_pred.csv"))
 ```
+
 
 
 
